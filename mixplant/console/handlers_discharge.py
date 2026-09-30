@@ -10,8 +10,11 @@ from .router import Request, Response, Router
 
 COMMANDS = (
     ("POST", "/api/chute/arrive", "chute.arrive"),
+    ("POST", "/api/chute/register", "chute.register"),
     ("POST", "/api/chute/open", "chute.open"),
     ("POST", "/api/chute/load", "chute.load"),
+    ("POST", "/api/chute/topup", "chute.topup"),
+    ("POST", "/api/chute/close_ticket", "chute.close_ticket"),
     ("POST", "/api/chute/close", "chute.close"),
     ("POST", "/api/pump/prime", "pump.prime"),
     ("POST", "/api/pump/start", "pump.start"),
@@ -33,6 +36,8 @@ def register(router: Router, runtime: Any, pages: Any) -> None:
         lambda _: Response.html(inject_snapshot(pages.load("discharge"), runtime.controller.discharge_view())),
     )
     router.add("GET", "/api/discharge", lambda _: Response.json(runtime.controller.discharge_view()))
+    router.add("GET", "/api/chute/board", lambda _: Response.json(runtime.chute.board()))
+    router.add("GET", "/api/chute/reconcile", lambda _: Response.json(runtime.chute.reconcile()))
     router.add("POST", "/api/chute/confirm", _confirm(runtime))
     for method, path, command in COMMANDS:
         router.add(method, path, _command(runtime, command))

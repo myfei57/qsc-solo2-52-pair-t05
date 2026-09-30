@@ -5,20 +5,25 @@
   <title>Discharge and delivery</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f6f8; color: #1c1f24; }
-    table { border-collapse: collapse; width: 100%; background: #fff; }
+    table { border-collapse: collapse; width: 100%; background: #fff; margin-bottom: 1rem; }
     th, td { border: 1px solid #d7dbe0; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
     form { background: #fff; padding: 1rem; border: 1px solid #d7dbe0; margin-bottom: 1rem; }
     input, button { padding: 0.35rem 0.5rem; margin: 0.2rem; }
     nav a { margin-right: 0.8rem; }
+    .ok { color: #1c7c3c; font-weight: 600; }
+    .bad { color: #b3261e; font-weight: 600; }
   </style>
 </head>
 <body>
   <nav><a href="/pages/recipe">recipe</a><a href="/pages/batch">batch</a><a href="/pages/discharge">discharge</a><a href="/pages/alarms">alarms</a></nav>
   <h1>Discharge and delivery</h1>
-  <form id="arrive"><input name="truck_id" value="T-01"><button type="submit">truck arrives</button></form>
+  <form id="register"><input name="truck_id" value="T-01"><input name="rated_capacity_m3" value="8"><select name="trip"><option value="primary">primary</option><option value="topup">topup</option></select><button type="submit">register truck</button></form>
+  <form id="arrive"><input name="truck_id" value="T-01"><select name="trip"><option value="primary">primary</option><option value="topup">topup</option></select><button type="submit">truck arrives</button></form>
   <form id="open"><button type="submit">open door</button></form>
-  <form id="load"><input name="truck_id" value="T-01"><input name="volume_m3" value="6"><button type="submit">load</button></form>
+  <form id="load"><input name="truck_id" value="T-01"><input name="volume_m3" value="6"><input name="request_id" placeholder="request_id (idempotency key)"><button type="submit">load (close on overflow)</button></form>
+  <form id="topup"><input name="truck_id" value="T-01"><input name="volume_m3" value="1"><input name="request_id" placeholder="request_id"><button type="submit">top up (merge same ticket)</button></form>
   <form id="confirm"><input name="truck_id" value="T-01"><input name="volume_m3" value="6"><button type="submit">confirm</button></form>
+  <form id="close_ticket"><input name="truck_id" value="T-01"><button type="submit">close ticket</button></form>
   <form id="prime"><button type="submit">prime confirmed</button></form>
   <form id="pump"><button type="submit">start pump</button></form>
   <form id="stroke"><input name="volume_m3" value="0.32"><button type="submit">stroke</button></form>
@@ -27,24 +32,61 @@
   <form id="draw"><input name="litres" value="12"><button type="submit">draw sample</button></form>
   <form id="release"><button type="submit">release latch</button></form>
   <form id="file"><input name="litres" value="12"><button type="submit">file sample</button></form>
-  <table id="queue"><thead><tr><th>waiting</th></tr></thead><tbody></tbody></table>
+
+  <h2>Dispatch board</h2>
+  <p id="batch"></p>
+  <table id="queue"><thead><tr><th>#</th><th>truck</th><th>trip</th><th>rated m3</th><th>loaded m3</th><th>still can load m3</th></tr></thead><tbody></tbody></table>
+
+  <h2>Loading tickets</h2>
+  <table id="tickets"><thead><tr><th>ticket</th><th>truck</th><th>batch</th><th>total m3</th><th>remaining m3</th><th>blocked m3</th><th>parts</th><th>state</th></tr></thead><tbody></tbody></table>
+
+  <h2>Reconciliation (ticket / board / audit)</h2>
+  <p id="reconcile-state"></p>
+  <table id="reconcile"><thead><tr><th>ticket</th><th>ticket m3</th><th>board m3</th><th>audit m3</th><th>ok</th></tr></thead><tbody></tbody></table>
+
   <script id="plant-state" type="application/json"><!--STATE--></script>
   <script>
     const state = JSON.parse(document.getElementById('plant-state').textContent || '{}');
-    const body = document.querySelector('#queue tbody');
-    for (const truck of (state.queue?.order || [])) {
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${truck}</td>`;
-      body.appendChild(row);
+    const board = state.board || {};
+
+    const batch = board.batch;
+    document.getElementById('batch').textContent = batch
+      ? `batch ${batch.batch_id}: planned ${batch.planned_m3} / delivered ${batch.delivered_m3} / remaining ${batch.remaining_m3} m3`
+      : 'no open batch';
+
+    const qbody = document.querySelector('#queue tbody');
+    for (const row of (board.queue || [])) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${row.position}</td><td>${row.truck_id}</td><td>${row.trip}</td><td>${row.rated_capacity_m3}</td><td>${row.loaded_m3}</td><td>${row.headroom_m3}</td>`;
+      qbody.appendChild(tr);
     }
+
+    const tbody = document.querySelector('#tickets tbody');
+    for (const t of (board.tickets || [])) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${t.ticket_id}</td><td>${t.truck_id}</td><td>${t.batch_id}</td><td>${t.total_m3}</td><td>${t.remaining_m3}</td><td>${t.blocked_m3}</td><td>${t.parts.length}</td><td>${t.closed ? 'closed' : 'open'}</td>`;
+      tbody.appendChild(tr);
+    }
+
+    const rec = state.reconcile || { consistent: true, rows: [] };
+    document.getElementById('reconcile-state').innerHTML = rec.consistent
+      ? '<span class="ok">consistent</span>'
+      : `<span class="bad">${rec.mismatches} mismatch(es)</span>`;
+    const rbody = document.querySelector('#reconcile tbody');
+    for (const r of rec.rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.ticket_id}</td><td>${r.ticket_m3}</td><td>${r.board_m3}</td><td>${r.audit_m3}</td><td>${r.consistent ? 'yes' : 'NO'}</td>`;
+      rbody.appendChild(tr);
+    }
+
     async function post(path, form) {
       const entries = form ? Object.fromEntries(new FormData(form).entries()) : {};
       const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entries) });
       return response.json();
     }
-    const routes = { arrive: '/api/chute/arrive', open: '/api/chute/open', load: '/api/chute/load', confirm: '/api/chute/confirm', prime: '/api/pump/prime', pump: '/api/pump/start', stroke: '/api/pump/stroke', pressure: '/api/pump/pressure', finish: '/api/pump/finish', draw: '/api/sampler/draw', release: '/api/sampler/release', file: '/api/sampler/file' };
+    const routes = { register: '/api/chute/register', arrive: '/api/chute/arrive', open: '/api/chute/open', load: '/api/chute/load', topup: '/api/chute/topup', confirm: '/api/chute/confirm', close_ticket: '/api/chute/close_ticket', prime: '/api/pump/prime', pump: '/api/pump/start', stroke: '/api/pump/stroke', pressure: '/api/pump/pressure', finish: '/api/pump/finish', draw: '/api/sampler/draw', release: '/api/sampler/release', file: '/api/sampler/file' };
     for (const [id, path] of Object.entries(routes)) {
-      document.getElementById(id).addEventListener('submit', async (event) => { event.preventDefault(); console.log(await post(path, event.target)); location.reload(); });
+      document.getElementById(id).addEventListener('submit', async (event) => { event.preventDefault(); const out = await post(path, event.target); console.log(out); if (out.result && out.result.decision && out.result.decision.blocked_m3 > 0) { alert('overflow blocked on the spot: ' + JSON.stringify(out.result.decision)); } location.reload(); });
     }
   </script>
 </body>

@@ -63,6 +63,19 @@ class AuditService(PlantService):
     def recent(self, limit: int = 20) -> list[dict[str, Any]]:
         return recent(self.ledger, limit)
 
+    def hydrate_from_stream(self) -> None:
+        """Rebuild the shift ledger from the committed audit entries."""
+
+        for record in self.store.history(ENTRY_KIND):
+            self.ledger.record(
+                audit_entry(
+                    name=str(record.payload.get("name", "")),
+                    origin=str(record.payload.get("origin", self.origin)),
+                    tick=int(record.payload.get("tick", record.tick)),
+                    detail=dict(record.payload.get("detail", {})),
+                )
+            )
+
     def counts(self) -> dict[str, int]:
         return by_name(self.ledger)
 

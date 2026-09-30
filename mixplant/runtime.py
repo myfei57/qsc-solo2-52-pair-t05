@@ -29,7 +29,15 @@ from .ns.registry import DeviceKind
 from .ns.topology import build_registry, default_topology
 from .plant.controller import PlantController
 from .plant.status import compose_plant_status
-from .plant.tools import integer, number, optional_integer, optional_number, optional_text, text
+from .plant.tools import (
+    integer,
+    number,
+    optional_integer,
+    optional_number,
+    optional_text,
+    optional_text_or_none,
+    text,
+)
 from .pump.service import PumpService
 from .recipe.recipe import Recipe
 from .recipe.service import RecipeService
@@ -110,6 +118,7 @@ class PlantRuntime:
         self.pump = PumpService(self.context, self.machines["delivery"])
         self.sampler = SamplerService(self.context, self.recipes, self.machines["delivery"])
         self.audit = AuditService(self.context, self.machines["batch"], alarms=self.alarms)
+        self.chute.bind_audit(self.audit)
         self.controller = PlantController(self)
         self.boot_report: RestoreReport | None = None
         self._services: dict[str, PlantService] = {
@@ -146,6 +155,8 @@ class PlantRuntime:
         self._restore_id_counters()
         self._adopt_records()
         self._hydrate_machines()
+        self.chute.hydrate_from_stream()
+        self.audit.hydrate_from_stream()
         self.store.publish(
             BOOT_KIND,
             "console",
@@ -175,6 +186,9 @@ class PlantRuntime:
         self.ids.restore("snap", len(self.store.snapshots.load_all()))
         samples = sum(1 for record in self.store.visible() if record.kind == "sampler.record")
         self.ids.restore("sample", samples)
+        self.ids.restore(
+            "ticket", sum(1 for record in self.store.visible() if record.kind == "chute.ticket")
+        )
 
     def _adopt_records(self) -> None:
         """Adopt everything the stream still carries."""
@@ -440,11 +454,34 @@ class PlantRuntime:
                 residual_kg=number(payload, "residual_kg"),
                 reason=optional_text(payload, "reason", "batch complete"),
             ),
-            "chute.arrive": lambda payload: self.chute.arrive(text(payload, "truck_id")),
+            "chute.arrive": lambda payload: self.chute.arrive(
+                text(payload, "truck_id"), trip=optional_text_or_none(payload, "trip")
+            ),
+            "chute.register": lambda payload: self.chute.register_truck(
+                truck_id=text(payload, "truck_id"),
+                rated_capacity_m3=number(payload, "rated_capacity_m3"),
+                trip=optional_text(payload, "trip", "primary"),
+            ),
             "chute.open": lambda payload: self.chute.open_door(),
             "chute.load": lambda payload: self.chute.load(
-                truck_id=text(payload, "truck_id"), volume_m3=number(payload, "volume_m3")
+                truck_id=text(payload, "truck_id"),
+                volume_m3=number(payload, "volume_m3"),
+                request_id=optional_text_or_none(payload, "request_id"),
+                trip=optional_text_or_none(payload, "trip"),
             ),
+            "chute.topup": lambda payload: self.chute.topup(
+                truck_id=text(payload, "truck_id"),
+                volume_m3=number(payload, "volume_m3"),
+                request_id=optional_text_or_none(payload, "request_id"),
+            ),
+            "chute.close_ticket": lambda payload: self.chute.close_ticket(
+                truck_id=text(payload, "truck_id")
+            ),
+            "chute.board": lambda payload: self.chute.board(),
+            "chute.headroom": lambda payload: self.chute.headroom_for(
+                text(payload, "truck_id"), trip=optional_text_or_none(payload, "trip")
+            ),
+            "chute.reconcile": lambda payload: self.chute.reconcile(),
             "chute.confirm": lambda payload: self.chute.confirm(
                 truck_id=text(payload, "truck_id"), volume_m3=number(payload, "volume_m3")
             ),

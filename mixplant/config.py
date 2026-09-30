@@ -21,6 +21,8 @@ class Limits:
     pump_pressure_max_mpa: float = 8.0
     prime_water_min_l: float = 40.0
     sample_window_ticks: int = 8
+    truck_default_capacity_m3: float = 8.0
+    truck_overfill_tolerance_m3: float = 0.05
 
     def as_mapping(self) -> dict[str, float]:
         return {
@@ -32,6 +34,8 @@ class Limits:
             "hopper_residual_max_kg": self.hopper_residual_max_kg,
             "pump_pressure_max_mpa": self.pump_pressure_max_mpa,
             "prime_water_min_l": self.prime_water_min_l,
+            "truck_default_capacity_m3": self.truck_default_capacity_m3,
+            "truck_overfill_tolerance_m3": self.truck_overfill_tolerance_m3,
         }
 
 

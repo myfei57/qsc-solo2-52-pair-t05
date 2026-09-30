@@ -13,7 +13,9 @@
     "hopper_residual_max_kg": 12.0,
     "pump_pressure_max_mpa": 8.0,
     "prime_water_min_l": 40.0,
-    "sample_window_ticks": 8
+    "sample_window_ticks": 8,
+    "truck_default_capacity_m3": 8.0,
+    "truck_overfill_tolerance_m3": 0.05
   },
   "defaults": {
     "baseline_ttl_ticks": 32,

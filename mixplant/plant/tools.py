@@ -23,6 +23,15 @@ def optional_text(payload: Mapping[str, Any], key: str, fallback: str) -> str:
     return str(value)
 
 
+def optional_text_or_none(payload: Mapping[str, Any], key: str) -> str | None:
+    """Return an optional string field, or ``None`` when it is absent."""
+
+    value = payload.get(key)
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
 def number(payload: Mapping[str, Any], key: str) -> float:
     """Return a numeric field or refuse the call."""
 

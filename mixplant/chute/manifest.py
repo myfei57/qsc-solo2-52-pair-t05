@@ -22,6 +22,15 @@ class LoadManifest:
         self._loads[load.truck_id] = load
         return load
 
+    def adopt(self, load: LoadRecord) -> LoadRecord:
+        """Put a first load read back from the stream into the manifest."""
+
+        self._loads.setdefault(load.truck_id, load)
+        return load
+
+    def loads(self) -> tuple[LoadRecord, ...]:
+        return tuple(self._loads.values())
+
     def require(self, truck_id: str) -> LoadRecord:
         load = self._loads.get(truck_id)
         if load is None:

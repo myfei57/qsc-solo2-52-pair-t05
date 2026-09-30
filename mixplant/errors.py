@@ -73,6 +73,17 @@ class OverLimitError(MixPlantError):
     http_status = 409
 
 
+class OverfillBlockedError(MixPlantError):
+    """A load asked for more than the trip allows; the overflow was refused.
+
+    Raised after the in-target part was delivered and the valve was told to
+    close, so the caller can see both what was accepted and what was blocked.
+    """
+
+    code = "overfill_blocked"
+    http_status = 409
+
+
 class BelowLimitError(OverLimitError):
     """A measured value dropped under a configured lower bound."""
 

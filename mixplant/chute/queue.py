@@ -32,6 +32,11 @@ class TruckQueue:
             raise NotFoundError("no truck is waiting for concrete")
         return self._waiting[0]
 
+    def head_safe(self) -> str | None:
+        """Return the head truck, or ``None`` when the queue is empty."""
+
+        return self._waiting[0] if self._waiting else None
+
     def serve(self, truck_id: str) -> str:
         """Remove the head truck after confirming it is the one named."""
 
