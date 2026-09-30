@@ -8,17 +8,36 @@
     table { border-collapse: collapse; width: 100%; background: #fff; }
     th, td { border: 1px solid #d7dbe0; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
     form { background: #fff; padding: 1rem; border: 1px solid #d7dbe0; margin-bottom: 1rem; }
-    input, button { padding: 0.35rem 0.5rem; margin: 0.2rem; }
+    input, button, select { padding: 0.35rem 0.5rem; margin: 0.2rem; }
     nav a { margin-right: 0.8rem; }
+    .num { text-align: right; }
+    #board { margin: 1rem 0; }
   </style>
 </head>
 <body>
   <nav><a href="/pages/recipe">recipe</a><a href="/pages/batch">batch</a><a href="/pages/discharge">discharge</a><a href="/pages/alarms">alarms</a></nav>
   <h1>Discharge and delivery</h1>
+  <form id="register">
+    <input name="truck_id" value="T-01">
+    <input name="capacity_m3" value="8" size="4">
+    <select name="trip_type"><option value="standard">standard (close at quota)</option><option value="makeup">makeup (merge on one sheet)</option></select>
+    <button type="submit">register truck</button>
+  </form>
   <form id="arrive"><input name="truck_id" value="T-01"><button type="submit">truck arrives</button></form>
   <form id="open"><button type="submit">open door</button></form>
-  <form id="load"><input name="truck_id" value="T-01"><input name="volume_m3" value="6"><button type="submit">load</button></form>
-  <form id="confirm"><input name="truck_id" value="T-01"><input name="volume_m3" value="6"><button type="submit">confirm</button></form>
+  <form id="load">
+    <input name="truck_id" value="T-01"><input name="volume_m3" value="6" size="4">
+    <input name="request_id" placeholder="request id" value="">
+    <button type="submit">load</button>
+  </form>
+  <form id="makeup">
+    <input name="truck_id" value="T-01"><input name="volume_m3" value="2" size="4">
+    <input name="request_id" placeholder="request id (required)">
+    <button type="submit">makeup (merge on sheet)</button>
+  </form>
+  <form id="confirm"><input name="truck_id" value="T-01"><input name="volume_m3" value="6" size="4"><button type="submit">confirm</button></form>
+  <form id="close"><button type="submit">close door</button></form>
+  <form id="reconcile"><button type="submit">reconcile sheets / board / audit</button></form>
   <form id="prime"><button type="submit">prime confirmed</button></form>
   <form id="pump"><button type="submit">start pump</button></form>
   <form id="stroke"><input name="volume_m3" value="0.32"><button type="submit">stroke</button></form>
@@ -27,22 +46,31 @@
   <form id="draw"><input name="litres" value="12"><button type="submit">draw sample</button></form>
   <form id="release"><button type="submit">release latch</button></form>
   <form id="file"><input name="litres" value="12"><button type="submit">file sample</button></form>
-  <table id="queue"><thead><tr><th>waiting</th></tr></thead><tbody></tbody></table>
+  <div id="board"></div>
+  <table id="queue"><thead><tr><th>waiting</th><th>trip</th><th class="num">capacity</th><th class="num">can still load (m3)</th></tr></thead><tbody></tbody></table>
   <script id="plant-state" type="application/json"><!--STATE--></script>
   <script>
     const state = JSON.parse(document.getElementById('plant-state').textContent || '{}');
     const body = document.querySelector('#queue tbody');
-    for (const truck of (state.queue?.order || [])) {
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${truck}</td>`;
-      body.appendChild(row);
+    const capacity = (state.subsystems?.chute?.queue?.capacity || []);
+    for (const row of capacity) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${row.truck_id}</td><td>${row.trip_type || ''}</td>`
+        + `<td class="num">${row.capacity_m3 ?? ''}</td><td class="num">${row.can_load_m3 ?? ''}</td>`;
+      body.appendChild(tr);
     }
+    const board = state.subsystems?.chute?.board || {};
+    document.getElementById('board').innerHTML =
+      `<table><thead><tr><th>dispatch board</th><th class="num">total m3</th><th class="num">over-plan m3</th><th class="num">blocked m3</th><th class="num">lines</th></tr></thead>`
+      + `<tbody><tr><td>this batch / plant</td><td class="num">${board.total_m3 ?? 0}</td>`
+      + `<td class="num">${board.plan_excess_m3 ?? 0}</td><td class="num">${board.blocked_m3 ?? 0}</td>`
+      + `<td class="num">${board.load_lines ?? 0}</td></tr></tbody></table>`;
     async function post(path, form) {
       const entries = form ? Object.fromEntries(new FormData(form).entries()) : {};
       const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entries) });
       return response.json();
     }
-    const routes = { arrive: '/api/chute/arrive', open: '/api/chute/open', load: '/api/chute/load', confirm: '/api/chute/confirm', prime: '/api/pump/prime', pump: '/api/pump/start', stroke: '/api/pump/stroke', pressure: '/api/pump/pressure', finish: '/api/pump/finish', draw: '/api/sampler/draw', release: '/api/sampler/release', file: '/api/sampler/file' };
+    const routes = { register: '/api/chute/register', arrive: '/api/chute/arrive', open: '/api/chute/open', load: '/api/chute/load', makeup: '/api/chute/makeup', confirm: '/api/chute/confirm', close: '/api/chute/close', reconcile: '/api/chute/reconcile', prime: '/api/pump/prime', pump: '/api/pump/start', stroke: '/api/pump/stroke', pressure: '/api/pump/pressure', finish: '/api/pump/finish', draw: '/api/sampler/draw', release: '/api/sampler/release', file: '/api/sampler/file' };
     for (const [id, path] of Object.entries(routes)) {
       document.getElementById(id).addEventListener('submit', async (event) => { event.preventDefault(); console.log(await post(path, event.target)); location.reload(); });
     }

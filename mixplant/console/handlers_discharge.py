@@ -10,9 +10,12 @@ from .router import Request, Response, Router
 
 COMMANDS = (
     ("POST", "/api/chute/arrive", "chute.arrive"),
+    ("POST", "/api/chute/register", "chute.register_truck"),
     ("POST", "/api/chute/open", "chute.open"),
     ("POST", "/api/chute/load", "chute.load"),
+    ("POST", "/api/chute/makeup", "chute.makeup"),
     ("POST", "/api/chute/close", "chute.close"),
+    ("POST", "/api/chute/reconcile", "chute.reconcile"),
     ("POST", "/api/pump/prime", "pump.prime"),
     ("POST", "/api/pump/start", "pump.start"),
     ("POST", "/api/pump/stroke", "pump.stroke"),

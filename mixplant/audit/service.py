@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from ..service_base import PlantService
 from ..event.bus import Event
@@ -46,6 +46,37 @@ class AuditService(PlantService):
         self.ledger.record(
             audit_entry(name=event.name, origin=event.origin, tick=event.tick, detail=dict(event.payload))
         )
+
+    def handle_chute_event(self, event: Event) -> None:
+        """Copy metered loads into the ledger for the three way reconciliation.
+
+        The entry carries the full load line so the audit side can total the
+        metered volume independently of the chute's live loading sheets.  It
+        is published durably, like every ledger entry, so the third
+        reconciliation source survives a restart.
+        """
+
+        if event.name != "chute.loaded":
+            return
+        entry = audit_entry(
+            name=event.name, origin=event.origin, tick=event.tick, detail=dict(event.payload)
+        )
+        self.ledger.record(entry)
+        self.publish(ENTRY_KIND, entry.describe())
+
+    def replay_entry(self, payload: Mapping[str, Any]) -> None:
+        """Adopt one ledger entry read back from the committed stream."""
+
+        self.ledger.record(
+            audit_entry(
+                name=str(payload["name"]),
+                origin=str(payload.get("origin", self.origin)),
+                tick=int(payload.get("tick", 0)),
+                detail=dict(payload.get("detail") or {}),
+            )
+        )
+        if payload.get("name") == "sample.filed":
+            self._samples += 1
 
     def rollup(self) -> dict[str, Any]:
         """Write and return the current production roll-up."""

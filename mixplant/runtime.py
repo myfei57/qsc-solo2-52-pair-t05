@@ -7,10 +7,17 @@ from typing import Any, Callable, Mapping
 from .agg.service import AggService
 from .audit.service import AuditService
 from .cement.service import CementService
+from .chute.chute import (
+    CONFIRM_KIND as CHUTE_CONFIRM_KIND,
+    DOOR_KIND as CHUTE_DOOR_KIND,
+    FLEET_KIND as CHUTE_FLEET_KIND,
+    LOAD_KIND as CHUTE_LOAD_KIND,
+)
 from .chute.service import ChuteService
 from .clock import ManualClock
 from .config import StationConfig
 from .context import SharedContext
+from .audit.audit import ENTRY_KIND as AUDIT_ENTRY_KIND
 from .decision.batch import BatchRegistry
 from .decision.query import query_from_params, run_query
 from .decision.stateview import StateView
@@ -135,6 +142,7 @@ class PlantRuntime:
     def _wire_bus(self) -> None:
         self.bus.subscribe(ALARM, self.alarms)
         self.bus.subscribe(ALARM, self.audit.handle_alarm)
+        self.bus.subscribe("chute", self.audit.handle_chute_event)
         self.bus.subscribe_all(self.audit_subscriber)
 
     def bootstrap(self) -> dict[str, Any]:
@@ -175,6 +183,8 @@ class PlantRuntime:
         self.ids.restore("snap", len(self.store.snapshots.load_all()))
         samples = sum(1 for record in self.store.visible() if record.kind == "sampler.record")
         self.ids.restore("sample", samples)
+        load_lines = sum(1 for record in self.store.visible() if record.kind == CHUTE_LOAD_KIND)
+        self.ids.restore("loadline", load_lines)
 
     def _adopt_records(self) -> None:
         """Adopt everything the stream still carries."""
@@ -228,6 +238,16 @@ class PlantRuntime:
                     1,
                     validity=Validity.never(record.tick),
                 )
+            elif record.kind == AUDIT_ENTRY_KIND:
+                self.audit.replay_entry(record.payload)
+            elif record.kind == CHUTE_FLEET_KIND:
+                self.chute.adopt_fleet(dict(record.payload))
+            elif record.kind == CHUTE_LOAD_KIND:
+                self.chute.adopt_load(dict(record.payload))
+            elif record.kind == CHUTE_CONFIRM_KIND:
+                self.chute.adopt_confirmation(dict(record.payload))
+            elif record.kind == CHUTE_DOOR_KIND:
+                self.chute.adopt_door(dict(record.payload))
         self.moist.sync(corrections)
 
     def _hydrate_machines(self) -> None:
@@ -441,14 +461,27 @@ class PlantRuntime:
                 reason=optional_text(payload, "reason", "batch complete"),
             ),
             "chute.arrive": lambda payload: self.chute.arrive(text(payload, "truck_id")),
+            "chute.register_truck": lambda payload: self.chute.register_truck(
+                truck_id=text(payload, "truck_id"),
+                capacity_m3=optional_number(payload, "capacity_m3", 8.0),
+                trip_type=optional_text(payload, "trip_type", "standard"),
+            ),
             "chute.open": lambda payload: self.chute.open_door(),
             "chute.load": lambda payload: self.chute.load(
-                truck_id=text(payload, "truck_id"), volume_m3=number(payload, "volume_m3")
+                truck_id=text(payload, "truck_id"),
+                volume_m3=number(payload, "volume_m3"),
+                request_id=optional_text(payload, "request_id", ""),
+            ),
+            "chute.makeup": lambda payload: self.chute.makeup(
+                truck_id=text(payload, "truck_id"),
+                volume_m3=number(payload, "volume_m3"),
+                request_id=text(payload, "request_id"),
             ),
             "chute.confirm": lambda payload: self.chute.confirm(
                 truck_id=text(payload, "truck_id"), volume_m3=number(payload, "volume_m3")
             ),
             "chute.close": lambda payload: self.chute.close_door(),
+            "chute.reconcile": lambda payload: self.chute.reconcile_totals(),
             "pump.prime": lambda payload: self.pump.prime_confirmed(),
             "pump.start": lambda payload: self.pump.start(),
             "pump.stroke": lambda payload: self.pump.stroke(volume_m3=number(payload, "volume_m3")),

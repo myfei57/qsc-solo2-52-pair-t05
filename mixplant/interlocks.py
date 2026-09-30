@@ -107,6 +107,12 @@ DEFAULT_RULES: tuple[InterlockRule, ...] = (
         message="trucks are loaded through an open discharge door",
     ),
     InterlockRule(
+        name="chute-makeup-needs-open-door",
+        action="chute.makeup",
+        requires=(CHUTE_OPEN,),
+        message="a makeup load is metered through an open discharge door",
+    ),
+    InterlockRule(
         name="chute-confirm-needs-load",
         action="chute.confirm",
         requires=(TRUCK_LOADED,),
